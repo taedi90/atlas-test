@@ -1,0 +1,74 @@
+name: PR CI
+
+on:
+  pull_request:
+    branches: [ develop ]
+    paths:
+      - 'sql/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: pass
+          MARIADB_DATABASE: dev
+        ports:
+          - 3306:3306
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=10s --health-timeout=5s --health-retries=3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Atlas
+        uses: ariga/setup-atlas@v0
+
+      - name: 1. Check for existing SQL modification/deletion
+        run: |
+          # get list of modified files in the sql/common directory
+          MODIFIED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} -- sql/common/)
+          for file in $MODIFIED_FILES; do
+            if [[ "$file" == *.sql ]]; then
+              # Check if the file already exists in the base branch
+              if git show origin/${{ github.base_ref }}:"$file" > /dev/null 2>&1; then
+                echo "Error: Modification of existing SQL file '$file' is not allowed."
+                exit 1
+              fi
+            fi
+          done
+
+      - name: 2. Check Naming Convention
+        run: |
+          # Check naming convention for new files
+          NEW_FILES=$(git diff --name-status origin/${{ github.base_ref }}...${{ github.head_ref }} -- sql/common/ | grep '^A' | awk '{print $2}')
+          for file in $NEW_FILES; do
+            if [[ "$file" == *.sql ]]; then
+              filename=$(basename "$file")
+              # Pattern: {Timestamp}_{Version}_{Description}.sql
+              # Regex: ^[0-9]{14}_v[0-9]+\.[0-9]+\.[0-9]+_.*\.sql$
+              if [[ ! $filename =~ ^[0-9]{14}_v[0-9]+\.[0-9]+\.[0-9]+_.*\.sql$ ]]; then
+                echo "Error: '$filename' does not follow the naming convention: {Timestamp}_{Version}_{Description}.sql"
+                echo "Example: 20250320153000_v1.9.0_my-feature.sql"
+                exit 1
+              fi
+            fi
+          done
+
+      - name: 3. Atlas Validate
+        run: |
+          atlas migrate validate --dir "file://sql/common"
+
+      - name: 4. Atlas Hash Check (Integrity)
+        run: |
+          atlas migrate hash --dir "file://sql/common" --check
+
+      - name: 5. Atlas Lint
+        run: |
+          # Lint against the dev-database (MariaDB)
+          atlas migrate lint \
+            --dir "file://sql/common" \
+            --dev-url "mariadb://root:pass@localhost:3306/dev" \
+            --latest 1

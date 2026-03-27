@@ -1,0 +1,2 @@
+# 모든 SQL 파일 줄바꿈 처리
+*.sql text eol=lf

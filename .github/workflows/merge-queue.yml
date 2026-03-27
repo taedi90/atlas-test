@@ -1,0 +1,38 @@
+name: Merge Queue CI
+
+on:
+  merge_group:
+    types: [ checks_requested ]
+
+jobs:
+  validate-and-lint:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: pass
+          MARIADB_DATABASE: dev
+        ports:
+          - 3306:3306
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=10s --health-timeout=5s --health-retries=3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Atlas
+        uses: ariga/setup-atlas@v0
+
+      - name: Atlas Validate
+        run: |
+          atlas migrate validate --dir "file://sql/common"
+
+      - name: Atlas Hash Check (Integrity)
+        run: |
+          atlas migrate hash --dir "file://sql/common" --check
+
+      - name: Atlas Lint
+        run: |
+          # Verify all migrations in the queue result against MariaDB
+          atlas migrate lint \
+            --dir "file://sql/common" \
+            --dev-url "mariadb://root:pass@localhost:3306/dev"
