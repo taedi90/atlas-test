@@ -4,3 +4,4 @@ CREATE TABLE users (
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+-- Malicious modification
