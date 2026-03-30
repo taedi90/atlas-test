@@ -68,15 +68,12 @@ jobs:
             fi
           done
 
-      - name: 3. Atlas Validate
+      - name: 3. Atlas Validate (includes Integrity Check)
         run: |
+          # Validate ensures that migration files match the atlas.sum hash
           atlas migrate validate --dir "file://sql/common"
 
-      - name: 4. Atlas Hash Check (Integrity)
-        run: |
-          atlas migrate hash --dir "file://sql/common" --check
-
-      - name: 5. Atlas Lint
+      - name: 4. Atlas Lint
         run: |
           # Lint against the dev-database (MariaDB)
           atlas migrate lint \
