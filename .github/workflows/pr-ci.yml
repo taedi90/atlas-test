@@ -74,12 +74,40 @@ jobs:
             fi
           done
 
-      - name: 3. Atlas 유효성 검사 (무결성 체크 포함)
+      - name: 3. 선형 히스토리(Linear History) 검사
+        run: |
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          
+          # 베이스 브랜치(develop)의 가장 마지막 SQL 파일명을 가져옵니다.
+          LATEST_BASE_FILE=$(git ls-tree -r $BASE_SHA --name-only -- sql/common/ | grep '\.sql$' | sort | tail -n 1)
+          
+          if [ -n "$LATEST_BASE_FILE" ]; then
+            LATEST_BASE_FILENAME=$(basename "$LATEST_BASE_FILE")
+            
+            # 현재 PR에서 추가된 모든 SQL 파일들을 가져옵니다.
+            NEW_FILES=$(git diff --name-status $BASE_SHA ${{ github.event.pull_request.head.sha }} -- sql/common/ | grep '^A' | awk '{print $2}')
+            
+            for file in $NEW_FILES; do
+              if [[ "$file" == *.sql ]]; then
+                NEW_FILENAME=$(basename "$file")
+                
+                # 새로운 파일이 기존의 마지막 파일보다 사전순으로 앞서면 에러 발생 (끼어들기 차단)
+                if [[ "$NEW_FILENAME" < "$LATEST_BASE_FILENAME" ]]; then
+                  echo "Error: 선형 히스토리 위반 감지!"
+                  echo "새로 추가된 파일 '$NEW_FILENAME'이 기존 파일 '$LATEST_BASE_FILENAME'보다 앞에 위치합니다."
+                  echo "마이그레이션 파일은 항상 기존 히스토리의 시간상 뒤에 추가되어야 합니다."
+                  exit 1
+                fi
+              fi
+            done
+          fi
+
+      - name: 4. Atlas 유효성 검사 (무결성 체크 포함)
         run: |
           # atlas.sum 파일과 실제 SQL 파일들의 해시값이 일치하는지 검증
           atlas migrate validate --dir "file://sql/common"
 
-      - name: 4. Atlas 린트(Lint) 검사
+      - name: 5. Atlas 린트(Lint) 검사
         run: |
           # 현재 PR에서 추가된 SQL 파일의 개수를 계산합니다.
           BASE_SHA=${{ github.event.pull_request.base.sha }}
