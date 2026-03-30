@@ -28,12 +28,19 @@ jobs:
 
       - name: 1. Check for existing SQL modification/deletion
         run: |
+          # Use SHAs provided by the GitHub event for reliable diffing
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          
+          echo "Comparing $BASE_SHA to $HEAD_SHA"
+          
           # get list of modified files in the sql/common directory
-          MODIFIED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} -- sql/common/)
+          MODIFIED_FILES=$(git diff --name-only $BASE_SHA $HEAD_SHA -- sql/common/)
+          
           for file in $MODIFIED_FILES; do
             if [[ "$file" == *.sql ]]; then
-              # Check if the file already exists in the base branch
-              if git show origin/${{ github.base_ref }}:"$file" > /dev/null 2>&1; then
+              # Check if the file already exists in the base commit
+              if git show $BASE_SHA:"$file" > /dev/null 2>&1; then
                 echo "Error: Modification of existing SQL file '$file' is not allowed."
                 exit 1
               fi
@@ -42,8 +49,12 @@ jobs:
 
       - name: 2. Check Naming Convention
         run: |
-          # Check naming convention for new files
-          NEW_FILES=$(git diff --name-status origin/${{ github.base_ref }}...${{ github.head_ref }} -- sql/common/ | grep '^A' | awk '{print $2}')
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          
+          # Check naming convention for NEW files (Added files only)
+          NEW_FILES=$(git diff --name-status $BASE_SHA $HEAD_SHA -- sql/common/ | grep '^A' | awk '{print $2}')
+          
           for file in $NEW_FILES; do
             if [[ "$file" == *.sql ]]; then
               filename=$(basename "$file")
