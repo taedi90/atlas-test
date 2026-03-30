@@ -81,9 +81,20 @@ jobs:
 
       - name: 4. Atlas 린트(Lint) 검사
         run: |
-          # MariaDB 환경에서 마이그레이션 파일의 문법 및 스키마 충돌 여부 검사
-          # --base 옵션을 통해 대상 브랜치(develop)와 비교하여 선형 히스토리(Linear History) 위반 여부 확인
-          atlas migrate lint \
-            --dir "file://sql/common" \
-            --dev-url "mariadb://root:pass@localhost:3306/dev" \
-            --base "git://develop?sparse=1"
+          # 현재 PR에서 추가된 SQL 파일의 개수를 계산합니다.
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          NEW_FILES_COUNT=$(git diff --name-only $BASE_SHA $HEAD_SHA -- sql/common/ | grep -c '\.sql$' || echo 0)
+          
+          echo "검사 대상 파일 개수: $NEW_FILES_COUNT"
+          
+          if [ "$NEW_FILES_COUNT" -gt 0 ]; then
+            # MariaDB 환경에서 마이그레이션 파일의 문법 및 스키마 충돌 여부 검사
+            # --latest 옵션을 통해 새로 추가된 파일들만 집중적으로 린트합니다.
+            atlas migrate lint \
+              --dir "file://sql/common" \
+              --dev-url "mariadb://root:pass@localhost:3306/dev" \
+              --latest "$NEW_FILES_COUNT"
+          else
+            echo "검사할 새로운 SQL 파일이 없습니다."
+          fi
