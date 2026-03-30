@@ -24,17 +24,14 @@ jobs:
         with:
           version: v0.37.0
 
-      - name: Atlas Validate
+      - name: Atlas 유효성 검사 (무결성 체크 포함)
         run: |
+          # atlas.sum과 SQL 파일 간의 해시 일치 여부 확인
           atlas migrate validate --dir "file://sql/common"
 
-      - name: Atlas Hash Check (Integrity)
+      - name: Atlas 린트(Lint) 검사
         run: |
-          atlas migrate hash --dir "file://sql/common" --check
-
-      - name: Atlas Lint
-        run: |
-          # Verify all migrations in the queue result against MariaDB
+          # 병합 대기열(Merge Queue)의 최종 결과물이 MariaDB 환경에서 정상 동작하는지 확인
           atlas migrate lint \
             --dir "file://sql/common" \
             --dev-url "mariadb://root:pass@localhost:3306/dev"

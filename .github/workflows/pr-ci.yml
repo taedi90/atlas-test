@@ -9,6 +9,7 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # MariaDB 서비스 컨테이너 설정: 린트(Lint) 시 실제 DB 환경에서 검증하기 위함
     services:
       mariadb:
         image: mariadb:10.11
@@ -26,59 +27,63 @@ jobs:
       - name: Install Atlas
         uses: ariga/setup-atlas@v0
         with:
+          # v0.38 버전부터 'atlas migrate lint' 기능이 유료(Pro/Cloud 로그인)로 변경됨
+          # 무료(Community) 환경에서 린트 기능을 유지하기 위해 정책 변경 전인 v0.37.0으로 고정함
           version: v0.37.0
 
-      - name: 1. Check for existing SQL modification/deletion
+      - name: 1. 기존 SQL 파일 수정/삭제 금지 검사
         run: |
-          # Use SHAs provided by the GitHub event for reliable diffing
+          # GitHub Event에서 제공하는 base와 head의 SHA 값을 비교하여 신뢰성 확보
           BASE_SHA=${{ github.event.pull_request.base.sha }}
           HEAD_SHA=${{ github.event.pull_request.head.sha }}
           
-          echo "Comparing $BASE_SHA to $HEAD_SHA"
+          echo "Checking for modifications between $BASE_SHA and $HEAD_SHA"
           
-          # get list of modified files in the sql/common directory
+          # sql/common 디렉토리 내에서 변경된 파일 목록 추출
           MODIFIED_FILES=$(git diff --name-only $BASE_SHA $HEAD_SHA -- sql/common/)
           
           for file in $MODIFIED_FILES; do
             if [[ "$file" == *.sql ]]; then
-              # Check if the file already exists in the base commit
+              # 해당 파일이 이미 베이스 커밋(develop)에 존재하는지 확인
               if git show $BASE_SHA:"$file" > /dev/null 2>&1; then
-                echo "Error: Modification of existing SQL file '$file' is not allowed."
+                echo "Error: 이미 머지된 SQL 파일 '$file'은 수정할 수 없습니다. (불변 마이그레이션 정책)"
                 exit 1
               fi
             fi
           done
 
-      - name: 2. Check Naming Convention
+      - name: 2. 네이밍 규칙(Naming Convention) 검사
         run: |
           BASE_SHA=${{ github.event.pull_request.base.sha }}
           HEAD_SHA=${{ github.event.pull_request.head.sha }}
           
-          # Check naming convention for NEW files (Added files only)
+          # 새로 추가된(Added) SQL 파일만 추출
           NEW_FILES=$(git diff --name-status $BASE_SHA $HEAD_SHA -- sql/common/ | grep '^A' | awk '{print $2}')
           
           for file in $NEW_FILES; do
             if [[ "$file" == *.sql ]]; then
               filename=$(basename "$file")
-              # Pattern: {Timestamp}_{Version}_{Description}.sql
-              # Regex: ^[0-9]{14}_v[0-9]+\.[0-9]+\.[0-9]+_.*\.sql$
+              # 정규식 패턴: {Timestamp(14자리)}_{Version}_{Description}.sql
+              # 예: 20250320153000_v1.9.0_my-feature.sql
               if [[ ! $filename =~ ^[0-9]{14}_v[0-9]+\.[0-9]+\.[0-9]+_.*\.sql$ ]]; then
-                echo "Error: '$filename' does not follow the naming convention: {Timestamp}_{Version}_{Description}.sql"
-                echo "Example: 20250320153000_v1.9.0_my-feature.sql"
+                echo "Error: '$filename' 파일이 네이밍 규칙을 따르지 않습니다."
+                echo "올바른 형식: {Timestamp}_{Version}_{Description}.sql"
+                echo "예시: 20250320153000_v1.9.0_my-feature.sql"
                 exit 1
               fi
             fi
           done
 
-      - name: 3. Atlas Validate (includes Integrity Check)
+      - name: 3. Atlas 유효성 검사 (무결성 체크 포함)
         run: |
-          # Validate ensures that migration files match the atlas.sum hash
+          # atlas.sum 파일과 실제 SQL 파일들의 해시값이 일치하는지 검증
           atlas migrate validate --dir "file://sql/common"
 
-      - name: 4. Atlas Lint
+      - name: 4. Atlas 린트(Lint) 검사
         run: |
-          # Lint against the dev-database (MariaDB)
+          # MariaDB 환경에서 마이그레이션 파일의 문법 및 스키마 충돌 여부 검사
+          # --base 옵션을 통해 대상 브랜치(develop)와 비교하여 선형 히스토리(Linear History) 위반 여부 확인
           atlas migrate lint \
             --dir "file://sql/common" \
             --dev-url "mariadb://root:pass@localhost:3306/dev" \
-            --latest 1
+            --base "git://develop?sparse=1"
