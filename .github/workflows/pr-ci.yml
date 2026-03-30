@@ -25,6 +25,8 @@ jobs:
 
       - name: Install Atlas
         uses: ariga/setup-atlas@v0
+        with:
+          version: v0.37.0
 
       - name: 1. Check for existing SQL modification/deletion
         run: |
