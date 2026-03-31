@@ -4,6 +4,6 @@
 -- Example SQL (Replace with your own)
 CREATE TABLE IF NOT EXISTS test_table_20260327164314 (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    data VARCHAR(255),
+    data VARCHAR(250),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
